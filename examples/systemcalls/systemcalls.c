@@ -18,12 +18,13 @@ bool do_system(const char *cmd)
 */
    int sys_return;
    
-   sys_return = system(cmd);
+   sys_return = system( cmd );
    
-   if (sys_return == 127 ||sys_return == 0 || sys_return == -1)
-	return false;
-   else 
-	return true;
+   if (WIFEXITED(sys_return) && WEXITSTATUS(sys_return) == 0) {
+            return true;
+        } else {
+            return false;
+    }
 }
 
 /**
@@ -126,22 +127,51 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
-
-    int kidpid;
-    int fd = open("redirected.txt", O_WRONLY|O_TRUNC|O_CREAT, 0644);
-    if (fd < 0) { perror("open"); abort(); }
-    switch (kidpid = fork()) {
-        case -1: perror("fork"); abort();
-        case 0:
-            if (dup2(fd, 1) < 0) { perror("dup2"); abort(); }
-                close(fd);
-                execvp(cmd, args); perror("execvp"); abort();
-        default:
-            close(fd);
-
-}
-
     va_end(args);
+
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    
+    
+    pid_t pid;
+    
+    pid = fork();
+    
+    if (pid < 0) {
+        // Fork failed
+        perror("fork");
+        close(fd);
+        return false;
+    } else if (pid == 0) {
+        // Child process: execute the command
+        if (dup2(fd, 1) < 0) 
+            { 
+            perror("dup2");
+            abort(); 
+            }
+        close(fd);
+        execv(command[0], command);
+
+        // If execv returns, an error occurred
+        perror("execv");
+        exit(EXIT_FAILURE);
+    } else {
+        // Parent process: wait for the child to finish
+        int status;
+        if (waitpid(pid, &status, 0) == -1) {
+            perror("waitpid");
+            close(fd);
+            return false;
+        }
+
+        // Check if the child exited normally and with status 0
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0) {
+            close(fd);
+            return true;
+        } else {
+            close(fd);
+            return false;
+        }
+    }
 
     return true;
 }
